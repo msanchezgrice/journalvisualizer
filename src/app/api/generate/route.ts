@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     const resp = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image-preview',
-      contents: [{ role: 'user', parts }],
+      contents: parts,
     })
 
     const partsOut = (resp as GenerateResponse)?.candidates?.[0]?.content?.parts ?? []
