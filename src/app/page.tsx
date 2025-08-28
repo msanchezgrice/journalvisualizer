@@ -17,6 +17,7 @@ export default function Home() {
   const [stylePreset, setStylePreset] = useState('Photorealistic')
   const [aspectHint, setAspectHint] = useState('16:9 cinematic frame')
   const [negative, setNegative] = useState('')
+  const [modelMode, setModelMode] = useState<'auto' | 'gemini' | 'imagen'>('auto')
   const [journal, setJournal] = useState('')
   const [lastError, setLastError] = useState<string | null>(null)
   const [hasKey, setHasKey] = useState<boolean | null>(null)
@@ -101,7 +102,7 @@ export default function Home() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, imagesBase64: includedImages }),
+        body: JSON.stringify({ prompt, imagesBase64: includedImages, modelMode, aspectHint: simplifiedAspect(aspectHint), negative }),
       })
       if (!res.ok) {
         let msg = 'Generation failed'
@@ -216,7 +217,7 @@ export default function Home() {
       <div className="flex-1 min-w-0">
         <Tldraw className="h-full w-full" onMount={handleMount} />
       </div>
-      <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto">
+      <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto h-full min-h-0">
         <h2 className="text-base font-semibold">Journal</h2>
         <textarea
           className="w-full min-h-[140px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-transparent"
@@ -231,6 +232,16 @@ export default function Home() {
         )}
         <h3 className="text-sm font-semibold">Generation</h3>
         <div className="flex items-center gap-2 text-sm">
+          <label>Model</label>
+          <select
+            className="border rounded px-2 py-1 bg-transparent"
+            value={modelMode}
+            onChange={(e) => setModelMode(e.target.value as 'auto' | 'gemini' | 'imagen')}
+          >
+            <option value="auto">Auto (Gemini → Imagen)</option>
+            <option value="gemini">Gemini 2.5 Flash Image</option>
+            <option value="imagen">Imagen 4.0</option>
+          </select>
           <label>Interval</label>
           <select
             className="border rounded px-2 py-1 bg-transparent"
@@ -361,4 +372,10 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     img.onerror = (e) => reject(e)
     img.src = url
   })
+}
+
+function simplifiedAspect(input: string) {
+  // Extract common aspect strings if present
+  const m = input.match(/(1:1|3:4|4:3|9:16|16:9)/)
+  return m ? m[1] : ''
 }
