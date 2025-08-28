@@ -20,6 +20,7 @@ export default function Home() {
   const [journal, setJournal] = useState('')
   const [lastError, setLastError] = useState<string | null>(null)
   const [hasKey, setHasKey] = useState<boolean | null>(null)
+  const [backoffUntil, setBackoffUntil] = useState<number | null>(null)
 
   // Included items (for MVP, journal only; images by URL/paste added below)
   const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
@@ -95,6 +96,7 @@ export default function Home() {
     if (!running) return
     const id = setInterval(async () => {
       if (inFlightRef.current) return
+      if (backoffUntil && Date.now() < backoffUntil) return
       const ctxKey = JSON.stringify({ prompt, includedImages })
       if (skipIfUnchanged && ctxKey === lastCtxRef.current) return
       inFlightRef.current = true
@@ -106,7 +108,14 @@ export default function Home() {
         })
         if (!res.ok) {
           let msg = 'Generation failed'
-          try { const j = await res.json(); msg = j?.error || msg } catch {}
+          try {
+            const j = await res.json();
+            msg = j?.error || msg
+            if (res.status === 429) {
+              const retry = typeof j?.retryDelaySec === 'number' ? j.retryDelaySec : 60
+              setBackoffUntil(Date.now() + retry * 1000)
+            }
+          } catch {}
           setLastError(msg)
           throw new Error(msg)
         }
@@ -119,6 +128,7 @@ export default function Home() {
         setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
         lastCtxRef.current = ctxKey
         setLastError(null)
+        setBackoffUntil(null)
       } catch (e) {
         console.error(e)
       } finally {
@@ -126,7 +136,7 @@ export default function Home() {
       }
     }, intervalMs)
     return () => clearInterval(id)
-  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages])
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil])
 
   // Paste / URL import for included images
   const [imageUrlInput, setImageUrlInput] = useState('')
@@ -227,6 +237,11 @@ export default function Home() {
         {lastError && (
           <div className="text-xs text-red-600 dark:text-red-400 border border-red-500/30 rounded p-2">
             {lastError}
+          </div>
+        )}
+        {backoffUntil && Date.now() < backoffUntil && (
+          <div className="text-xs text-amber-700 dark:text-amber-300 border border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 rounded p-2">
+            Rate limited. Auto-resumes in {Math.max(1, Math.ceil((backoffUntil - Date.now()) / 1000))}s.
           </div>
         )}
 

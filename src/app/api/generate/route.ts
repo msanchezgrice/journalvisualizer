@@ -46,7 +46,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ mimeType: imagePart.mimeType || 'image/png', data: imagePart.data })
   } catch (err: unknown) {
     console.error('Generate API error', err)
-    const message = typeof (err as { message?: unknown })?.message === 'string' ? (err as { message: string }).message : 'Generation failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const anyErr = err as any
+    const rawMsg = typeof anyErr?.message === 'string' ? anyErr.message : ''
+    let status = typeof anyErr?.status === 'number' ? anyErr.status : 500
+    let message = rawMsg || 'Generation failed'
+    // Best-effort detection of quota/429 with retry info
+    const isQuota = /RESOURCE_EXHAUSTED|quota|429/i.test(message)
+    if (isQuota) status = 429
+    let retryDelaySec: number | undefined
+    const m = message.match(/retryDelay\":"(\d+)s/)
+    if (m) retryDelaySec = parseInt(m[1], 10)
+    return NextResponse.json({ error: message, status, retryDelaySec }, { status })
   }
 }
