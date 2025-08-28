@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { GoogleGenAI } from '@google/genai'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 type ImageInlineData = { mime_type: string; data: string }
 
 export async function POST(req: NextRequest) {
@@ -44,6 +47,4 @@ export async function POST(req: NextRequest) {
     const message = typeof err?.message === 'string' ? err.message : 'Generation failed'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
 }
