@@ -94,6 +94,44 @@ export default function Home() {
     }
   }
 
+  const doGenerate = useCallback(async (ctxKeyOverride?: string) => {
+    const ctxKey = ctxKeyOverride ?? JSON.stringify({ prompt, includedImages })
+    inFlightRef.current = true
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, imagesBase64: includedImages }),
+      })
+      if (!res.ok) {
+        let msg = 'Generation failed'
+        try {
+          const j = await res.json();
+          msg = j?.error || msg
+          if (res.status === 429) {
+            const retry = typeof j?.retryDelaySec === 'number' ? j.retryDelaySec : 60
+            setBackoffUntil(Date.now() + retry * 1000)
+          }
+        } catch {}
+        setLastError(msg)
+        throw new Error(msg)
+      }
+      const { data, mimeType } = await res.json()
+      const blob = b64ToBlob(data, mimeType)
+      const url = URL.createObjectURL(blob)
+      await insertImageIntoTldraw(url, mimeType)
+      setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
+      lastCtxRef.current = ctxKey
+      setLastError(null)
+      setBackoffUntil(null)
+      setNextDue(Date.now() + intervalMs)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      inFlightRef.current = false
+    }
+  }, [prompt, includedImages, intervalMs])
+
   // Auto-generation scheduler
   useEffect(() => {
     if (!running) return
@@ -125,44 +163,7 @@ export default function Home() {
     return () => clearInterval(id)
   }, [running, backoffUntil, nextDue])
 
-  const doGenerate = useCallback(async (ctxKeyOverride?: string) => {
-    const ctxKey = ctxKeyOverride ?? JSON.stringify({ prompt, includedImages })
-    inFlightRef.current = true
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, imagesBase64: includedImages }),
-      })
-      if (!res.ok) {
-        let msg = 'Generation failed'
-        try {
-          const j = await res.json();
-          msg = j?.error || msg
-          if (res.status === 429) {
-            const retry = typeof j?.retryDelaySec === 'number' ? j.retryDelaySec : 60
-            setBackoffUntil(Date.now() + retry * 1000)
-          }
-        } catch {}
-        setLastError(msg)
-        throw new Error(msg)
-      }
-      const { data, mimeType } = await res.json()
-      const blob = b64ToBlob(data, mimeType)
-      const url = URL.createObjectURL(blob)
-      await insertImageIntoTldraw(url, mimeType)
-      setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
-      lastCtxRef.current = ctxKey
-      setLastError(null)
-      setBackoffUntil(null)
-      // reset next due after manual runs
-      setNextDue(Date.now() + intervalMs)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      inFlightRef.current = false
-    }
-  }, [prompt, includedImages, intervalMs])
+  
 
   // Paste / URL import for included images
   const [imageUrlInput, setImageUrlInput] = useState('')
