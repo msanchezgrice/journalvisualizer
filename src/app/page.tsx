@@ -128,10 +128,9 @@ export default function Home() {
         throw new Error(msg)
       }
       const { data, mimeType, modelUsed } = await res.json()
-      const blob = b64ToBlob(data, mimeType)
-      const url = URL.createObjectURL(blob)
-      await insertImageIntoTldraw(url, mimeType)
-      setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
+      const dataUrl = `data:${mimeType};base64,${data}`
+      await insertImageIntoTldraw(dataUrl, mimeType)
+      setPreview((prev) => [{ url: dataUrl, ts: Date.now() }, ...prev].slice(0, 12))
       lastCtxRef.current = ctxKey
       setLastError(null)
       setBackoffUntil(null)
@@ -344,7 +343,11 @@ export default function Home() {
         </div>
 
         <h3 className="text-sm font-semibold mt-2">Prompt Preview</h3>
-        <pre className="text-xs whitespace-pre-wrap border rounded p-2 bg-transparent max-h-40 overflow-auto">{prompt}</pre>
+        <textarea
+          readOnly
+          value={prompt}
+          className="text-xs w-full min-h-[140px] border rounded p-2 bg-transparent resize-y"
+        />
 
         <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
         <div className="grid grid-cols-2 gap-2">
