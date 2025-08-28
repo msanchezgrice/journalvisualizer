@@ -76,15 +76,17 @@ export async function POST(req: NextRequest) {
     // auto: Gemini first, then Imagen fallback on known errors
     try {
       return NextResponse.json(await tryGemini())
-    } catch (e: any) {
-      const msg = String(e?.message || '')
-      const status = typeof e?.status === 'number' ? e.status : 500
+    } catch (e: unknown) {
+      const errObj = typeof e === 'object' && e !== null ? (e as Record<string, unknown>) : {}
+      const msg = typeof errObj['message'] === 'string' ? (errObj['message'] as string) : String(e)
+      const status = typeof errObj['status'] === 'number' ? (errObj['status'] as number) : 500
       const isQuota = /RESOURCE_EXHAUSTED|quota|429/i.test(msg) || status === 429
       if (isQuota || /No image returned/i.test(msg)) {
         try {
           return NextResponse.json(await tryImagen())
-        } catch (e2: any) {
-          const raw = String(e2?.message || 'Fallback failed')
+        } catch (e2: unknown) {
+          const err2 = typeof e2 === 'object' && e2 !== null ? (e2 as Record<string, unknown>) : {}
+          const raw = typeof err2['message'] === 'string' ? (err2['message'] as string) : 'Fallback failed'
           return NextResponse.json({ error: `Gemini failed (${msg}); Imagen failed (${raw})` }, { status: 502 })
         }
       }

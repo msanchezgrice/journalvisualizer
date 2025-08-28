@@ -136,7 +136,7 @@ export default function Home() {
     } finally {
       inFlightRef.current = false
     }
-  }, [prompt, includedImages, intervalMs])
+  }, [prompt, includedImages, intervalMs, modelMode, aspectHint, negative])
 
   // Auto-generation scheduler
   useEffect(() => {
