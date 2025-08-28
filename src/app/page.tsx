@@ -66,7 +66,7 @@ export default function Home() {
           id,
           type: 'image',
           typeName: 'asset',
-          props: { src: url, w, h, mimeType: mime, name: `image-${new Date().toISOString()}` },
+          props: { src: url, w, h, mimeType: mime, isAnimated: false, name: `image-${new Date().toISOString()}` },
         },
       ])
       const screenCenter = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
@@ -86,17 +86,20 @@ export default function Home() {
     }
   }
 
+  type TLCompatAsset = Record<string, unknown>
+  type TLCompatShape = Record<string, unknown>
+  
   const editorRef = useRef<{
-    createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string; name?: string } }[]) => void
-    createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
+    createAssets?: (assets: TLCompatAsset[]) => void
+    createShapes?: (shapes: TLCompatShape[]) => void
     getViewportScreenCenter?: () => { x: number; y: number }
     screenToPage?: (pt: { x: number; y: number }) => { x: number; y: number }
   } | null>(null)
 
   function handleMount(editor: unknown) {
     editorRef.current = editor as {
-      createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string; name?: string } }[]) => void
-      createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
+      createAssets?: (assets: TLCompatAsset[]) => void
+      createShapes?: (shapes: TLCompatShape[]) => void
       getViewportScreenCenter?: () => { x: number; y: number }
       screenToPage?: (pt: { x: number; y: number }) => { x: number; y: number }
     }
@@ -228,11 +231,11 @@ export default function Home() {
   const [preview, setPreview] = useState<{ url: string; ts: number }[]>([])
 
   return (
-    <div className="flex h-full w-full">
-      <div className="flex-1 min-w-0">
+    <div className="flex h-full min-h-0 w-full flex-wrap">
+      <div className="flex-1 min-w-0 min-h-0">
         <Tldraw className="h-full w-full" onMount={handleMount} />
       </div>
-      <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto h-full min-h-0">
+      <div className="w-full md:w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto max-h-screen md:h-full min-h-0">
         <h2 className="text-base font-semibold">Journal</h2>
         <textarea
           className="w-full min-h-[140px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-transparent"
@@ -246,7 +249,7 @@ export default function Home() {
           </div>
         )}
         <h3 className="text-sm font-semibold">Generation</h3>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
           <label>Model</label>
           <select
             className="border rounded px-2 py-1 bg-transparent"
