@@ -19,7 +19,8 @@ export default function Home() {
   const [aspectHint, setAspectHint] = useState('16:9 cinematic frame')
   const [negative, setNegative] = useState('')
   const [modelMode, setModelMode] = useState<'auto' | 'gemini' | 'imagen'>('auto')
-  const [journal, setJournal] = useState('')
+  const [journalByPage, setJournalByPage] = useState<Record<string, string>>({})
+  const [currentPageId, setCurrentPageId] = useState<string>('default')
   const [lastError, setLastError] = useState<string | null>(null)
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [backoffUntil, setBackoffUntil] = useState<number | null>(null)
@@ -34,12 +35,13 @@ export default function Home() {
   const lastCtxRef = useRef<string>('')
   const inFlightRef = useRef(false)
 
+  const journalForPage = journalByPage[currentPageId] ?? ''
   const prompt = useMemo(() => composePrompt({
-    journal,
+    journal: journalForPage,
     stylePreset,
     aspectHint,
     negative,
-  }), [journal, stylePreset, aspectHint, negative])
+  }), [journalForPage, stylePreset, aspectHint, negative])
 
   // Health check for env key
   useEffect(() => {
@@ -89,6 +91,7 @@ export default function Home() {
 
   type TLCompatAsset = Record<string, unknown>
   type TLCompatShape = Record<string, unknown>
+  type TLCompatEditor = { getCurrentPageId?: () => string }
   
   const editorRef = useRef<{
     createAssets?: (assets: TLCompatAsset[]) => void
@@ -105,6 +108,16 @@ export default function Home() {
       screenToPage?: (pt: { x: number; y: number }) => { x: number; y: number }
     }
   }
+
+  // Track current tldraw page id to scope journal per page
+  useEffect(() => {
+    const id = setInterval(() => {
+      const ed = editorRef.current as TLCompatEditor | null
+      const pid = ed?.getCurrentPageId?.() ?? 'default'
+      setCurrentPageId((prev) => (prev === pid ? prev : pid))
+    }, 500)
+    return () => clearInterval(id)
+  }, [])
 
   const doGenerate = useCallback(async (ctxKeyOverride?: string) => {
     const ctxKey = ctxKeyOverride ?? JSON.stringify({ prompt, includedImages })
@@ -168,6 +181,20 @@ export default function Home() {
     return () => clearInterval(id)
   }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue, doGenerate, modelMode])
 
+  // Ensure the initial auto-run triggers even if interval loop hasn't ticked yet
+  useEffect(() => {
+    if (!running) return
+    const timer = setTimeout(async () => {
+      if (inFlightRef.current) return
+      if (backoffUntil && Date.now() < backoffUntil) return
+      if ((modelMode === 'gemini' || modelMode === 'auto') && Date.now() - lastGeminiAttemptRef.current < GEMINI_MIN_SPACING_MS) return
+      const ctxKey = JSON.stringify({ prompt, includedImages })
+      if (skipIfUnchanged && ctxKey === lastCtxRef.current) return
+      await doGenerate(ctxKey)
+    }, intervalMs)
+    return () => clearTimeout(timer)
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, modelMode, doGenerate])
+
   // Countdown for next scheduled run or backoff
   useEffect(() => {
     const id = setInterval(() => {
@@ -193,10 +220,7 @@ export default function Home() {
       const blob = await resp.blob()
       const arrayBuf = await blob.arrayBuffer()
       const b64 = arrayBufferToBase64(arrayBuf)
-      setIncludedImages((imgs) => [
-        { mime_type: blob.type || 'image/png', data: b64 },
-        ...imgs,
-      ])
+      setIncludedImages((imgs) => [{ mime_type: blob.type || 'image/png', data: b64 }, ...imgs].slice(0, 10))
       setImageUrlInput('')
     } catch (e) {
       console.error('Failed to load image URL', e)
@@ -216,7 +240,7 @@ export default function Home() {
             const result = reader.result
             if (typeof result === 'string') {
               const [, meta, b64] = result.match(/^data:(.*?);base64,(.*)$/) || []
-              if (b64) setIncludedImages((imgs) => [{ mime_type: meta || 'image/png', data: b64 }, ...imgs])
+              if (b64) setIncludedImages((imgs) => [{ mime_type: meta || 'image/png', data: b64 }, ...imgs].slice(0, 10))
             }
           }
           reader.readAsDataURL(file)
@@ -272,12 +296,12 @@ export default function Home() {
         onDrop={handleCanvasDrop}
       >
         <Tldraw className="h-full w-full" onMount={handleMount} />
-        <div className="absolute top-2 left-2 z-10 w-[min(90%,600px)] pointer-events-auto">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-[min(90%,640px)] pointer-events-auto">
           <textarea
             className="w-full min-h-[120px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-white/80 dark:bg-black/40 backdrop-blur"
             placeholder="Write here..."
-            value={journal}
-            onChange={(e) => setJournal(e.target.value)}
+            value={journalForPage}
+            onChange={(e) => setJournalByPage((prev) => ({ ...prev, [currentPageId]: e.target.value }))}
           />
         </div>
       </div>
