@@ -1,103 +1,270 @@
-import Image from "next/image";
+"use client"
+
+import { Tldraw } from '@tldraw/tldraw'
+import '@tldraw/tldraw/tldraw.css'
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+type InlineImage = { mime_type: string; data: string }
+
+type IntervalOption = 30000 | 60000 | 120000
+
+const DEFAULT_INTERVAL: IntervalOption = 30000
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [running, setRunning] = useState(true)
+  const [intervalMs, setIntervalMs] = useState<IntervalOption>(DEFAULT_INTERVAL)
+  const [skipIfUnchanged, setSkipIfUnchanged] = useState(true)
+  const [stylePreset, setStylePreset] = useState('Photorealistic')
+  const [aspectHint, setAspectHint] = useState('16:9 cinematic frame')
+  const [negative, setNegative] = useState('')
+  const [journal, setJournal] = useState('')
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  // Included items (for MVP, journal only; images by URL/paste added below)
+  const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
+
+  const lastCtxRef = useRef<string>('')
+  const inFlightRef = useRef(false)
+
+  const prompt = useMemo(() => composePrompt({
+    journal,
+    stylePreset,
+    aspectHint,
+    negative,
+  }), [journal, stylePreset, aspectHint, negative])
+
+  async function insertImageIntoTldraw(url: string, mime: string) {
+    const editor = editorRef.current
+    if (!editor) return
+    // Load image to determine dimensions
+    const imgEl = await loadImage(url)
+    const w = Math.min(800, imgEl.naturalWidth || imgEl.width || 800)
+    const h = Math.round((imgEl.naturalHeight || imgEl.height || 800) * (w / (imgEl.naturalWidth || imgEl.width || w)))
+    const id = `asset:${Math.random().toString(36).slice(2)}`
+    try {
+      // Create asset + shape (API shape is flexible; using any to avoid strict types)
+      editor.createAssets?.([
+        {
+          id,
+          type: 'image',
+          typeName: 'asset',
+          props: { src: url, w, h, mimeType: mime },
+        } as any,
+      ])
+      const center = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
+      editor.createShapes?.([
+        {
+          id: `shape:${Math.random().toString(36).slice(2)}`,
+          type: 'image',
+          x: center.x - w / 2,
+          y: center.y - h / 2,
+          props: { w, h, assetId: id },
+        } as any,
+      ])
+    } catch (e) {
+      console.warn('Could not insert into tldraw, keeping in preview only', e)
+    }
+  }
+
+  const editorRef = useRef<any>(null)
+
+  useEffect(() => {
+    if (!running) return
+    const id = setInterval(async () => {
+      if (inFlightRef.current) return
+      const ctxKey = JSON.stringify({ prompt, includedImages })
+      if (skipIfUnchanged && ctxKey === lastCtxRef.current) return
+      inFlightRef.current = true
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, imagesBase64: includedImages }),
+        })
+        if (!res.ok) throw new Error('Generation failed')
+        const { data, mimeType } = await res.json()
+        const blob = b64ToBlob(data, mimeType)
+        const url = URL.createObjectURL(blob)
+        // Insert into tldraw as an image shape
+        await insertImageIntoTldraw(url, mimeType)
+        // Also keep a small preview list
+        setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
+        lastCtxRef.current = ctxKey
+      } catch (e) {
+        console.error(e)
+      } finally {
+        inFlightRef.current = false
+      }
+    }, intervalMs)
+    return () => clearInterval(id)
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages])
+
+  // Paste / URL import for included images
+  const [imageUrlInput, setImageUrlInput] = useState('')
+  async function addImageByUrl() {
+    try {
+      if (!imageUrlInput) return
+      const resp = await fetch(imageUrlInput)
+      const blob = await resp.blob()
+      const arrayBuf = await blob.arrayBuffer()
+      const b64 = arrayBufferToBase64(arrayBuf)
+      setIncludedImages((imgs) => [
+        { mime_type: blob.type || 'image/png', data: b64 },
+        ...imgs,
+      ])
+      setImageUrlInput('')
+    } catch (e) {
+      console.error('Failed to load image URL', e)
+    }
+  }
+
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile()
+          if (!file) continue
+          const reader = new FileReader()
+          reader.onload = () => {
+            const result = reader.result
+            if (typeof result === 'string') {
+              const [, meta, b64] = result.match(/^data:(.*?);base64,(.*)$/) || []
+              if (b64) setIncludedImages((imgs) => [{ mime_type: meta || 'image/png', data: b64 }, ...imgs])
+            }
+          }
+          reader.readAsDataURL(file)
+        }
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [])
+
+  // Preview list until we wire insertion into tldraw programmatically
+  const [preview, setPreview] = useState<{ url: string; ts: number }[]>([])
+
+  return (
+    <div className="flex h-full w-full">
+      <div className="flex-1 min-w-0">
+        <Tldraw className="h-full w-full" onMount={(editor) => { editorRef.current = editor }} />
+      </div>
+      <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto">
+        <h2 className="text-base font-semibold">Journal</h2>
+        <textarea
+          className="w-full min-h-[140px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-transparent"
+          placeholder="Write here..."
+          value={journal}
+          onChange={(e) => setJournal(e.target.value)}
+        />
+        <h3 className="text-sm font-semibold">Generation</h3>
+        <div className="flex items-center gap-2 text-sm">
+          <label>Interval</label>
+          <select
+            className="border rounded px-2 py-1 bg-transparent"
+            value={intervalMs}
+            onChange={(e) => setIntervalMs(Number(e.target.value) as IntervalOption)}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <option value={30000}>30s</option>
+            <option value={60000}>60s</option>
+            <option value={120000}>2m</option>
+          </select>
+          <label className="ml-3 flex items-center gap-1">
+            <input type="checkbox" checked={running} onChange={(e) => setRunning(e.target.checked)} />
+            Running
+          </label>
+          <label className="ml-3 flex items-center gap-1">
+            <input type="checkbox" checked={skipIfUnchanged} onChange={(e) => setSkipIfUnchanged(e.target.checked)} />
+            Skip if unchanged
+          </label>
+          <button
+            className="ml-auto text-xs border px-2 py-1 rounded"
+            onClick={async () => {
+              // manual trigger
+              lastCtxRef.current = ''
+              setRunning(false)
+              setTimeout(() => setRunning(true), 0)
+            }}
           >
-            Read our docs
-          </a>
+            Generate Now
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+        <h3 className="text-sm font-semibold">Style</h3>
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <label className="col-span-2">Preset
+            <select className="w-full border rounded px-2 py-1 bg-transparent" value={stylePreset} onChange={(e) => setStylePreset(e.target.value)}>
+              <option>Photorealistic</option>
+              <option>Cinematic</option>
+              <option>Watercolor</option>
+              <option>Anime</option>
+            </select>
+          </label>
+          <label className="col-span-2">Aspect hint
+            <input className="w-full border rounded px-2 py-1 bg-transparent" value={aspectHint} onChange={(e) => setAspectHint(e.target.value)} />
+          </label>
+          <label className="col-span-2">Negative cues
+            <input className="w-full border rounded px-2 py-1 bg-transparent" value={negative} onChange={(e) => setNegative(e.target.value)} placeholder="e.g., no text artifacts" />
+          </label>
+        </div>
+
+        <h3 className="text-sm font-semibold">Include Images</h3>
+        <div className="flex gap-2">
+          <input className="flex-1 border rounded px-2 py-1 bg-transparent text-sm" placeholder="Paste image URL" value={imageUrlInput} onChange={(e) => setImageUrlInput(e.target.value)} />
+          <button className="text-sm border rounded px-2 py-1" onClick={addImageByUrl}>Add</button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {includedImages.map((img, i) => (
+            <div key={i} className="w-20 h-20 bg-black/5 dark:bg-white/5 relative">
+              <img className="object-cover w-full h-full" src={`data:${img.mime_type};base64,${img.data}`} />
+            </div>
+          ))}
+        </div>
+
+        <h3 className="text-sm font-semibold mt-2">Prompt Preview</h3>
+        <pre className="text-xs whitespace-pre-wrap border rounded p-2 bg-transparent max-h-40 overflow-auto">{prompt}</pre>
+
+        <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
+        <div className="grid grid-cols-2 gap-2">
+          {preview.map((p) => (
+            <img key={p.ts} src={p.url} className="w-full h-28 object-cover rounded" />
+          ))}
+        </div>
+      </div>
     </div>
-  );
+  )
+}
+
+function composePrompt(opts: { journal: string; stylePreset: string; aspectHint: string; negative: string }) {
+  const recent = opts.journal.slice(-600)
+  const lines: string[] = []
+  if (recent.trim()) {
+    lines.push(`Describe and render a single coherent image based on this writing: ${recent}`)
+  }
+  lines.push(`Style: ${opts.stylePreset}. Camera: 85mm portrait, golden hour lighting.`)
+  if (opts.aspectHint) lines.push(`Frame: ${opts.aspectHint}.`)
+  if (opts.negative.trim()) lines.push(`Avoid: ${opts.negative}.`)
+  lines.push('High-fidelity, realistic textures, consistent composition. No embedded text unless explicitly asked.')
+  return lines.join('\n')
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i++) binary += String.fromCharCode(bytes[i])
+  return btoa(binary)
+}
+
+function b64ToBlob(b64Data: string, contentType = 'image/png', sliceSize = 512) {
+  const byteCharacters = atob(b64Data)
+  const byteArrays = []
+  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+    const slice = byteCharacters.slice(offset, offset + sliceSize)
+    const byteNumbers = new Array(slice.length)
+    for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i)
+    const byteArray = new Uint8Array(byteNumbers)
+    byteArrays.push(byteArray)
+  }
+  return new Blob(byteArrays, { type: contentType })
 }
