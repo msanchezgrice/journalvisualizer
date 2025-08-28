@@ -19,6 +19,7 @@ export default function Home() {
   const [negative, setNegative] = useState('')
   const [journal, setJournal] = useState('')
   const [lastError, setLastError] = useState<string | null>(null)
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
 
   // Included items (for MVP, journal only; images by URL/paste added below)
   const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
@@ -32,6 +33,16 @@ export default function Home() {
     aspectHint,
     negative,
   }), [journal, stylePreset, aspectHint, negative])
+
+  // Health check for env key
+  useEffect(() => {
+    let mounted = true
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((j) => { if (mounted) setHasKey(Boolean(j?.hasKey)) })
+      .catch(() => { if (mounted) setHasKey(false) })
+    return () => { mounted = false }
+  }, [])
 
   async function insertImageIntoTldraw(url: string, mime: string) {
     const editor = editorRef.current
@@ -176,6 +187,11 @@ export default function Home() {
           value={journal}
           onChange={(e) => setJournal(e.target.value)}
         />
+        {hasKey === false && (
+          <div className="text-xs text-red-700 dark:text-red-300 border border-red-500/30 bg-red-50 dark:bg-red-950/30 rounded p-2">
+            Missing GEMINI_API_KEY. Set it in Vercel Project Settings → Environment Variables and redeploy.
+          </div>
+        )}
         <h3 className="text-sm font-semibold">Generation</h3>
         <div className="flex items-center gap-2 text-sm">
           <label>Interval</label>
