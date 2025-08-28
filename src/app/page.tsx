@@ -65,16 +65,18 @@ export default function Home() {
           id,
           type: 'image',
           typeName: 'asset',
-          props: { src: url, w, h, mimeType: mime },
+          props: { src: url, w, h, mimeType: mime, name: `image-${new Date().toISOString()}` },
         },
       ])
-      const center = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
+      const screenCenter = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
+      // Convert to page coordinates if available
+      const pageCenter = (editor as any).screenToPage ? (editor as any).screenToPage(screenCenter) : screenCenter
       editor.createShapes?.([
         {
           id: `shape:${Math.random().toString(36).slice(2)}`,
           type: 'image',
-          x: center.x - w / 2,
-          y: center.y - h / 2,
+          x: pageCenter.x - w / 2,
+          y: pageCenter.y - h / 2,
           props: { w, h, assetId: id },
         },
       ])
