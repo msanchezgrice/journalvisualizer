@@ -11,7 +11,7 @@ type IntervalOption = 30000 | 60000 | 120000
 const DEFAULT_INTERVAL: IntervalOption = 30000
 
 export default function Home() {
-  const [running, setRunning] = useState(true)
+  const [running, setRunning] = useState(false)
   const [intervalMs, setIntervalMs] = useState<IntervalOption>(DEFAULT_INTERVAL)
   const [skipIfUnchanged, setSkipIfUnchanged] = useState(true)
   const [stylePreset, setStylePreset] = useState('Photorealistic')
@@ -21,6 +21,8 @@ export default function Home() {
   const [lastError, setLastError] = useState<string | null>(null)
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [backoffUntil, setBackoffUntil] = useState<number | null>(null)
+  const [nextDue, setNextDue] = useState<number | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
 
   // Included items (for MVP, journal only; images by URL/paste added below)
   const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
@@ -92,51 +94,75 @@ export default function Home() {
     }
   }
 
+  // Auto-generation scheduler
   useEffect(() => {
     if (!running) return
+    // set initial due if missing
+    if (!nextDue) setNextDue(Date.now() + intervalMs)
     const id = setInterval(async () => {
+      // reset next due at each tick
+      setNextDue(Date.now() + intervalMs)
       if (inFlightRef.current) return
       if (backoffUntil && Date.now() < backoffUntil) return
       const ctxKey = JSON.stringify({ prompt, includedImages })
       if (skipIfUnchanged && ctxKey === lastCtxRef.current) return
-      inFlightRef.current = true
-      try {
-        const res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, imagesBase64: includedImages }),
-        })
-        if (!res.ok) {
-          let msg = 'Generation failed'
-          try {
-            const j = await res.json();
-            msg = j?.error || msg
-            if (res.status === 429) {
-              const retry = typeof j?.retryDelaySec === 'number' ? j.retryDelaySec : 60
-              setBackoffUntil(Date.now() + retry * 1000)
-            }
-          } catch {}
-          setLastError(msg)
-          throw new Error(msg)
-        }
-        const { data, mimeType } = await res.json()
-        const blob = b64ToBlob(data, mimeType)
-        const url = URL.createObjectURL(blob)
-        // Insert into tldraw as an image shape
-        await insertImageIntoTldraw(url, mimeType)
-        // Also keep a small preview list
-        setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
-        lastCtxRef.current = ctxKey
-        setLastError(null)
-        setBackoffUntil(null)
-      } catch (e) {
-        console.error(e)
-      } finally {
-        inFlightRef.current = false
-      }
+      await doGenerate(ctxKey)
     }, intervalMs)
     return () => clearInterval(id)
-  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil])
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue])
+
+  // Countdown for next scheduled run or backoff
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (backoffUntil && Date.now() < backoffUntil) {
+        setSecondsLeft(Math.max(0, Math.ceil((backoffUntil - Date.now()) / 1000)))
+      } else if (running && nextDue) {
+        setSecondsLeft(Math.max(0, Math.ceil((nextDue - Date.now()) / 1000)))
+      } else {
+        setSecondsLeft(null)
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [running, backoffUntil, nextDue])
+
+  async function doGenerate(ctxKeyOverride?: string) {
+    const ctxKey = ctxKeyOverride ?? JSON.stringify({ prompt, includedImages })
+    inFlightRef.current = true
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, imagesBase64: includedImages }),
+      })
+      if (!res.ok) {
+        let msg = 'Generation failed'
+        try {
+          const j = await res.json();
+          msg = j?.error || msg
+          if (res.status === 429) {
+            const retry = typeof j?.retryDelaySec === 'number' ? j.retryDelaySec : 60
+            setBackoffUntil(Date.now() + retry * 1000)
+          }
+        } catch {}
+        setLastError(msg)
+        throw new Error(msg)
+      }
+      const { data, mimeType } = await res.json()
+      const blob = b64ToBlob(data, mimeType)
+      const url = URL.createObjectURL(blob)
+      await insertImageIntoTldraw(url, mimeType)
+      setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
+      lastCtxRef.current = ctxKey
+      setLastError(null)
+      setBackoffUntil(null)
+      // reset next due after manual runs
+      setNextDue(Date.now() + intervalMs)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      inFlightRef.current = false
+    }
+  }
 
   // Paste / URL import for included images
   const [imageUrlInput, setImageUrlInput] = useState('')
@@ -225,10 +251,8 @@ export default function Home() {
           <button
             className="ml-auto text-xs border px-2 py-1 rounded"
             onClick={async () => {
-              // manual trigger
-              lastCtxRef.current = ''
-              setRunning(false)
-              setTimeout(() => setRunning(true), 0)
+              const ctxKey = JSON.stringify({ prompt, includedImages })
+              await doGenerate(ctxKey)
             }}
           >
             Generate Now
@@ -241,7 +265,12 @@ export default function Home() {
         )}
         {backoffUntil && Date.now() < backoffUntil && (
           <div className="text-xs text-amber-700 dark:text-amber-300 border border-amber-500/30 bg-amber-50 dark:bg-amber-950/30 rounded p-2">
-            Rate limited. Auto-resumes in {Math.max(1, Math.ceil((backoffUntil - Date.now()) / 1000))}s.
+            Rate limited. Auto-resumes in {secondsLeft ?? ''}s.
+          </div>
+        )}
+        {running && !backoffUntil && secondsLeft !== null && (
+          <div className="text-xs text-gray-600 dark:text-gray-300 border border-gray-500/20 rounded p-2">
+            Next generation in {secondsLeft}s.
           </div>
         )}
 
