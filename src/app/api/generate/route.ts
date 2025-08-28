@@ -44,9 +44,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ mimeType: imagePart.mime_type || 'image/png', data: imagePart.data })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Generate API error', err)
-    const message = typeof err?.message === 'string' ? err.message : 'Generation failed'
+    const message = typeof (err as { message?: unknown })?.message === 'string' ? (err as { message: string }).message : 'Generation failed'
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
