@@ -9,10 +9,10 @@ type InlineImage = { mime_type: string; data: string }
 
 type IntervalOption = 30000 | 60000 | 120000
 
-const DEFAULT_INTERVAL: IntervalOption = 30000
+const DEFAULT_INTERVAL: IntervalOption = 60000
 
 export default function Home() {
-  const [running, setRunning] = useState(false)
+  const [running, setRunning] = useState(true)
   const [intervalMs, setIntervalMs] = useState<IntervalOption>(DEFAULT_INTERVAL)
   const [skipIfUnchanged, setSkipIfUnchanged] = useState(true)
   const [stylePreset, setStylePreset] = useState('Photorealistic')
@@ -51,7 +51,7 @@ export default function Home() {
     return () => { mounted = false }
   }, [])
 
-  async function insertImageIntoTldraw(url: string, mime: string) {
+  async function insertImageIntoTldraw(url: string, mime: string, pagePos?: { x: number; y: number }) {
     const editor = editorRef.current
     if (!editor) return
     // Load image to determine dimensions
@@ -71,8 +71,8 @@ export default function Home() {
         },
       ])
       const screenCenter = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
-      // Convert to page coordinates if available
-      const pageCenter = editor.screenToPage ? editor.screenToPage(screenCenter) : screenCenter
+      // Convert to page coordinates if available, else use provided page position
+      const pageCenter = pagePos ?? (editor.screenToPage ? editor.screenToPage(screenCenter) : screenCenter)
       editor.createShapes?.([
         {
           id: `shape:${Math.random().toString(36).slice(2)}`,
@@ -230,19 +230,58 @@ export default function Home() {
   // Preview list until we wire insertion into tldraw programmatically
   const [preview, setPreview] = useState<{ url: string; ts: number }[]>([])
 
+  function handleThumbDragStart(e: React.DragEvent<HTMLDivElement>, url: string) {
+    // Provide both uri-list and plain text so drop targets can read either
+    try {
+      e.dataTransfer.setData('text/uri-list', url)
+      e.dataTransfer.setData('text/plain', url)
+      e.dataTransfer.effectAllowed = 'copy'
+    } catch {}
+  }
+
+  function handleDeleteThumb(ts: number) {
+    setPreview((prev) => prev.filter((p) => p.ts !== ts))
+  }
+
+  function mimeFromDataUrl(dataUrl: string): string {
+    const m = dataUrl.match(/^data:(.*?);base64,/)
+    return m?.[1] || 'image/png'
+  }
+
+  function handleCanvasDragOver(e: React.DragEvent<HTMLDivElement>) {
+    // Allow dropping images on the canvas surface
+    e.preventDefault()
+  }
+
+  async function handleCanvasDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const dataUrl = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
+    if (!dataUrl) return
+    const mime = dataUrl.startsWith('data:') ? mimeFromDataUrl(dataUrl) : 'image/png'
+    const editor = editorRef.current
+    const screenPt = { x: e.clientX, y: e.clientY }
+    const pagePos = editor?.screenToPage ? editor.screenToPage(screenPt) : undefined
+    await insertImageIntoTldraw(dataUrl, mime, pagePos)
+  }
+
   return (
     <div className="flex h-full min-h-0 w-full flex-wrap">
-      <div className="flex-1 min-w-0 min-h-0">
+      <div
+        className="flex-1 min-w-0 min-h-0 relative"
+        onDragOver={handleCanvasDragOver}
+        onDrop={handleCanvasDrop}
+      >
         <Tldraw className="h-full w-full" onMount={handleMount} />
+        <div className="absolute top-2 left-2 z-10 w-[min(90%,600px)] pointer-events-auto">
+          <textarea
+            className="w-full min-h-[120px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-white/80 dark:bg-black/40 backdrop-blur"
+            placeholder="Write here..."
+            value={journal}
+            onChange={(e) => setJournal(e.target.value)}
+          />
+        </div>
       </div>
       <div className="w-full md:w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto max-h-screen md:h-full min-h-0">
-        <h2 className="text-base font-semibold">Journal</h2>
-        <textarea
-          className="w-full min-h-[140px] rounded border border-black/10 dark:border-white/10 p-2 text-sm bg-transparent"
-          placeholder="Write here..."
-          value={journal}
-          onChange={(e) => setJournal(e.target.value)}
-        />
         {hasKey === false && (
           <div className="text-xs text-red-700 dark:text-red-300 border border-red-500/30 bg-red-50 dark:bg-red-950/30 rounded p-2">
             Missing GEMINI_API_KEY. Set it in Vercel Project Settings → Environment Variables and redeploy.
@@ -347,14 +386,36 @@ export default function Home() {
         <textarea
           readOnly
           value={prompt}
-          className="text-xs w-full h-40 border rounded p-2 bg-transparent resize-y"
+          rows={3}
+          className="text-xs w-full border rounded p-2 bg-transparent resize-y"
         />
 
         <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
         <div className="grid grid-cols-2 gap-2">
           {preview.map((p) => (
-            <div key={p.ts} className="relative w-full h-28">
-              <NextImage alt="generated" src={p.url} fill sizes="(max-width: 768px) 50vw, 33vw" className="object-cover rounded" unoptimized />
+            <div
+              key={p.ts}
+              className="relative w-full h-28"
+              draggable
+              onDragStart={(e) => handleThumbDragStart(e, p.url)}
+            >
+              <button
+                type="button"
+                aria-label="Delete image"
+                title="Delete"
+                className="absolute top-1 right-1 z-10 rounded bg-black/60 text-white text-xs leading-none px-2 py-1 hover:bg-black/80"
+                onClick={() => handleDeleteThumb(p.ts)}
+              >
+                ×
+              </button>
+              <NextImage
+                alt="generated"
+                src={p.url}
+                fill
+                sizes="(max-width: 768px) 50vw, 33vw"
+                className="object-cover rounded"
+                unoptimized
+              />
             </div>
           ))}
         </div>
