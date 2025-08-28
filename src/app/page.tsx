@@ -18,6 +18,7 @@ export default function Home() {
   const [aspectHint, setAspectHint] = useState('16:9 cinematic frame')
   const [negative, setNegative] = useState('')
   const [journal, setJournal] = useState('')
+  const [lastError, setLastError] = useState<string | null>(null)
 
   // Included items (for MVP, journal only; images by URL/paste added below)
   const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
@@ -80,7 +81,12 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, imagesBase64: includedImages }),
         })
-        if (!res.ok) throw new Error('Generation failed')
+        if (!res.ok) {
+          let msg = 'Generation failed'
+          try { const j = await res.json(); msg = j?.error || msg } catch {}
+          setLastError(msg)
+          throw new Error(msg)
+        }
         const { data, mimeType } = await res.json()
         const blob = b64ToBlob(data, mimeType)
         const url = URL.createObjectURL(blob)
@@ -89,6 +95,7 @@ export default function Home() {
         // Also keep a small preview list
         setPreview((prev) => [{ url, ts: Date.now() }, ...prev].slice(0, 12))
         lastCtxRef.current = ctxKey
+        setLastError(null)
       } catch (e) {
         console.error(e)
       } finally {
@@ -189,6 +196,11 @@ export default function Home() {
             Generate Now
           </button>
         </div>
+        {lastError && (
+          <div className="text-xs text-red-600 dark:text-red-400 border border-red-500/30 rounded p-2">
+            {lastError}
+          </div>
+        )}
 
         <h3 className="text-sm font-semibold">Style</h3>
         <div className="grid grid-cols-2 gap-2 text-sm">
