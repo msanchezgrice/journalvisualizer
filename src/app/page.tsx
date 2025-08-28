@@ -24,6 +24,8 @@ export default function Home() {
   const [backoffUntil, setBackoffUntil] = useState<number | null>(null)
   const [nextDue, setNextDue] = useState<number | null>(null)
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
+  const GEMINI_MIN_SPACING_MS = 60000
+  const lastGeminiAttemptRef = useRef<number>(0)
 
   // Included items (for MVP, journal only; images by URL/paste added below)
   const [includedImages, setIncludedImages] = useState<InlineImage[]>([])
@@ -117,7 +119,7 @@ export default function Home() {
         setLastError(msg)
         throw new Error(msg)
       }
-      const { data, mimeType } = await res.json()
+      const { data, mimeType, modelUsed } = await res.json()
       const blob = b64ToBlob(data, mimeType)
       const url = URL.createObjectURL(blob)
       await insertImageIntoTldraw(url, mimeType)
@@ -125,6 +127,9 @@ export default function Home() {
       lastCtxRef.current = ctxKey
       setLastError(null)
       setBackoffUntil(null)
+      if ((modelMode === 'gemini' || modelMode === 'auto') && modelUsed === 'gemini') {
+        lastGeminiAttemptRef.current = Date.now()
+      }
       setNextDue(Date.now() + intervalMs)
     } catch (e) {
       console.error(e)
@@ -143,12 +148,17 @@ export default function Home() {
       setNextDue(Date.now() + intervalMs)
       if (inFlightRef.current) return
       if (backoffUntil && Date.now() < backoffUntil) return
+      if ((modelMode === 'gemini' || modelMode === 'auto') && Date.now() - lastGeminiAttemptRef.current < GEMINI_MIN_SPACING_MS) {
+        // Respect Gemini rate suggestions by spacing calls ~60s apart
+        setNextDue(lastGeminiAttemptRef.current + GEMINI_MIN_SPACING_MS)
+        return
+      }
       const ctxKey = JSON.stringify({ prompt, includedImages })
       if (skipIfUnchanged && ctxKey === lastCtxRef.current) return
       await doGenerate(ctxKey)
     }, intervalMs)
     return () => clearInterval(id)
-  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue, doGenerate])
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue, doGenerate, modelMode])
 
   // Countdown for next scheduled run or backoff
   useEffect(() => {
@@ -270,6 +280,11 @@ export default function Home() {
             Generate Now
           </button>
         </div>
+        {(modelMode === 'gemini' || modelMode === 'auto') && (
+          <div className="text-xs text-gray-600 dark:text-gray-300 border border-gray-500/20 rounded p-2">
+            Gemini image calls are spaced ~60s to respect limits.
+          </div>
+        )}
         {lastError && (
           <div className="text-xs text-red-600 dark:text-red-400 border border-red-500/30 rounded p-2">
             {lastError}
@@ -309,6 +324,9 @@ export default function Home() {
           <input className="flex-1 border rounded px-2 py-1 bg-transparent text-sm" placeholder="Paste image URL" value={imageUrlInput} onChange={(e) => setImageUrlInput(e.target.value)} />
           <button className="text-sm border rounded px-2 py-1" onClick={addImageByUrl}>Add</button>
         </div>
+        {(modelMode === 'gemini' || modelMode === 'auto') && (
+          <div className="text-[11px] text-gray-500">Gemini uses up to 2 reference images per request in this app. Imagen (basic) ignores references.</div>
+        )}
         <div className="flex flex-wrap gap-2">
           {includedImages.map((img, i) => (
             <div key={i} className="w-20 h-20 bg-black/5 dark:bg-white/5 relative">

@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
     async function tryGemini() {
       const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = []
       if (prompt) parts.push({ text: prompt })
-      for (const img of imagesBase64) {
+      // Limit reference images to reduce payload / align with preview constraints
+      for (const img of imagesBase64.slice(0, 2)) {
         if (!img?.data || !img?.mime_type) continue
         parts.push({ inlineData: { data: img.data, mimeType: img.mime_type } })
       }
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
       const partsOut = (resp as GenerateResponse)?.candidates?.[0]?.content?.parts ?? []
       const imagePart = partsOut.find((p) => p?.inlineData)?.inlineData
       if (!imagePart?.data) throw Object.assign(new Error('No image returned from Gemini'), { status: 502 })
-      return { mimeType: imagePart.mimeType || 'image/png', data: imagePart.data }
+      return { mimeType: imagePart.mimeType || 'image/png', data: imagePart.data, modelUsed: 'gemini' as const }
     }
 
     async function tryImagen() {
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
       })
       const g = resp?.generatedImages?.[0]?.image
       if (!g?.imageBytes) throw Object.assign(new Error('No image returned from Imagen'), { status: 502 })
-      return { mimeType: g.mimeType || 'image/png', data: g.imageBytes }
+      return { mimeType: g.mimeType || 'image/png', data: g.imageBytes, modelUsed: 'imagen' as const }
     }
 
     if (modelMode === 'gemini') {
