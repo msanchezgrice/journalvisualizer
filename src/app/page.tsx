@@ -2,7 +2,7 @@
 
 import { Tldraw } from '@tldraw/tldraw'
 import '@tldraw/tldraw/tldraw.css'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type InlineImage = { mime_type: string; data: string }
 
@@ -109,7 +109,7 @@ export default function Home() {
       await doGenerate(ctxKey)
     }, intervalMs)
     return () => clearInterval(id)
-  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue])
+  }, [running, intervalMs, skipIfUnchanged, prompt, includedImages, backoffUntil, nextDue, doGenerate])
 
   // Countdown for next scheduled run or backoff
   useEffect(() => {
@@ -125,7 +125,7 @@ export default function Home() {
     return () => clearInterval(id)
   }, [running, backoffUntil, nextDue])
 
-  async function doGenerate(ctxKeyOverride?: string) {
+  const doGenerate = useCallback(async (ctxKeyOverride?: string) => {
     const ctxKey = ctxKeyOverride ?? JSON.stringify({ prompt, includedImages })
     inFlightRef.current = true
     try {
@@ -162,7 +162,7 @@ export default function Home() {
     } finally {
       inFlightRef.current = false
     }
-  }
+  }, [prompt, includedImages, intervalMs])
 
   // Paste / URL import for included images
   const [imageUrlInput, setImageUrlInput] = useState('')
