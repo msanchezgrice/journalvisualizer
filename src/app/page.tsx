@@ -346,7 +346,7 @@ export default function Home() {
         <textarea
           readOnly
           value={prompt}
-          className="text-xs w-full min-h-[140px] border rounded p-2 bg-transparent resize-y"
+          className="text-xs w-full h-40 border rounded p-2 bg-transparent resize-y"
         />
 
         <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
@@ -383,18 +383,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
   return btoa(binary)
 }
 
-function b64ToBlob(b64Data: string, contentType = 'image/png', sliceSize = 512) {
-  const byteCharacters = atob(b64Data)
-  const byteArrays = []
-  for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-    const slice = byteCharacters.slice(offset, offset + sliceSize)
-    const byteNumbers = new Array(slice.length)
-    for (let i = 0; i < slice.length; i++) byteNumbers[i] = slice.charCodeAt(i)
-    const byteArray = new Uint8Array(byteNumbers)
-    byteArrays.push(byteArray)
-  }
-  return new Blob(byteArrays, { type: contentType })
-}
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
