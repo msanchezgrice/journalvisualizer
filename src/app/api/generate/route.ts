@@ -5,6 +5,8 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type ImageInlineData = { mime_type: string; data: string }
+type CandidatePart = { text?: string; inline_data?: ImageInlineData }
+type GenerateResponse = { candidates?: Array<{ content?: { parts?: CandidatePart[] } }> }
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey })
 
-    const parts: any[] = []
+    const parts: Array<{ text: string } | { inline_data: ImageInlineData }> = []
     if (prompt) parts.push({ text: prompt })
     for (const img of imagesBase64) {
       if (!img?.data || !img?.mime_type) continue
@@ -35,8 +37,8 @@ export async function POST(req: NextRequest) {
       contents: [{ role: 'user', parts }],
     })
 
-    const partsOut = (resp as any)?.candidates?.[0]?.content?.parts ?? []
-    const imagePart = partsOut.find((p: any) => p?.inline_data)?.inline_data as ImageInlineData | undefined
+    const partsOut = (resp as GenerateResponse)?.candidates?.[0]?.content?.parts ?? []
+    const imagePart = partsOut.find((p) => p?.inline_data)?.inline_data
     if (!imagePart) {
       return NextResponse.json({ error: 'No image returned' }, { status: 502 })
     }

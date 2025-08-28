@@ -49,7 +49,7 @@ export default function Home() {
           type: 'image',
           typeName: 'asset',
           props: { src: url, w, h, mimeType: mime },
-        } as any,
+        },
       ])
       const center = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
       editor.createShapes?.([
@@ -59,14 +59,18 @@ export default function Home() {
           x: center.x - w / 2,
           y: center.y - h / 2,
           props: { w, h, assetId: id },
-        } as any,
+        },
       ])
     } catch (e) {
       console.warn('Could not insert into tldraw, keeping in preview only', e)
     }
   }
 
-  const editorRef = useRef<any>(null)
+  const editorRef = useRef<{
+    createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void
+    createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
+    getViewportScreenCenter?: () => { x: number; y: number }
+  } | null>(null)
 
   useEffect(() => {
     if (!running) return
@@ -154,7 +158,7 @@ export default function Home() {
   return (
     <div className="flex h-full w-full">
       <div className="flex-1 min-w-0">
-        <Tldraw className="h-full w-full" onMount={(editor) => { editorRef.current = editor }} />
+        <Tldraw className="h-full w-full" onMount={(editor) => { editorRef.current = editor as unknown as { createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void; createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void; getViewportScreenCenter?: () => { x: number; y: number } }} />
       </div>
       <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto">
         <h2 className="text-base font-semibold">Journal</h2>
@@ -228,7 +232,7 @@ export default function Home() {
         <div className="flex flex-wrap gap-2">
           {includedImages.map((img, i) => (
             <div key={i} className="w-20 h-20 bg-black/5 dark:bg-white/5 relative">
-              <img className="object-cover w-full h-full" src={`data:${img.mime_type};base64,${img.data}`} />
+              <img className="object-cover w-full h-full" alt="included" src={`data:${img.mime_type};base64,${img.data}`} />
             </div>
           ))}
         </div>
@@ -239,7 +243,7 @@ export default function Home() {
         <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
         <div className="grid grid-cols-2 gap-2">
           {preview.map((p) => (
-            <img key={p.ts} src={p.url} className="w-full h-28 object-cover rounded" />
+            <img key={p.ts} alt="generated" src={p.url} className="w-full h-28 object-cover rounded" />
           ))}
         </div>
       </div>
@@ -279,4 +283,13 @@ function b64ToBlob(b64Data: string, contentType = 'image/png', sliceSize = 512) 
     byteArrays.push(byteArray)
   }
   return new Blob(byteArrays, { type: contentType })
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = (e) => reject(e)
+    img.src = url
+  })
 }
