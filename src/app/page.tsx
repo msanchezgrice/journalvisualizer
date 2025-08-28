@@ -3,6 +3,7 @@
 import { Tldraw } from '@tldraw/tldraw'
 import '@tldraw/tldraw/tldraw.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import NextImage from 'next/image'
 
 type InlineImage = { mime_type: string; data: string }
 
@@ -70,7 +71,7 @@ export default function Home() {
       ])
       const screenCenter = editor.getViewportScreenCenter?.() || { x: 0, y: 0 }
       // Convert to page coordinates if available
-      const pageCenter = (editor as any).screenToPage ? (editor as any).screenToPage(screenCenter) : screenCenter
+      const pageCenter = editor.screenToPage ? editor.screenToPage(screenCenter) : screenCenter
       editor.createShapes?.([
         {
           id: `shape:${Math.random().toString(36).slice(2)}`,
@@ -86,16 +87,18 @@ export default function Home() {
   }
 
   const editorRef = useRef<{
-    createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void
+    createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string; name?: string } }[]) => void
     createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
     getViewportScreenCenter?: () => { x: number; y: number }
+    screenToPage?: (pt: { x: number; y: number }) => { x: number; y: number }
   } | null>(null)
 
   function handleMount(editor: unknown) {
     editorRef.current = editor as {
-      createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void
+      createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string; name?: string } }[]) => void
       createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
       getViewportScreenCenter?: () => { x: number; y: number }
+      screenToPage?: (pt: { x: number; y: number }) => { x: number; y: number }
     }
   }
 
@@ -332,7 +335,7 @@ export default function Home() {
         <div className="flex flex-wrap gap-2">
           {includedImages.map((img, i) => (
             <div key={i} className="w-20 h-20 bg-black/5 dark:bg-white/5 relative">
-              <img className="object-cover w-full h-full" alt="included" src={`data:${img.mime_type};base64,${img.data}`} />
+              <NextImage alt="included" src={`data:${img.mime_type};base64,${img.data}`} fill sizes="80px" className="object-cover w-full h-full" unoptimized />
             </div>
           ))}
         </div>
@@ -343,7 +346,9 @@ export default function Home() {
         <h3 className="text-sm font-semibold mt-2">Latest Images</h3>
         <div className="grid grid-cols-2 gap-2">
           {preview.map((p) => (
-            <img key={p.ts} alt="generated" src={p.url} className="w-full h-28 object-cover rounded" />
+            <div key={p.ts} className="relative w-full h-28">
+              <NextImage alt="generated" src={p.url} fill sizes="(max-width: 768px) 50vw, 33vw" className="object-cover rounded" unoptimized />
+            </div>
           ))}
         </div>
       </div>
@@ -389,7 +394,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve(img)
-    img.onerror = (e) => reject(e)
+    img.onerror = (e: unknown) => reject(e)
     img.src = url
   })
 }
