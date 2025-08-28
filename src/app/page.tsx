@@ -66,6 +66,7 @@ export default function Home() {
           id,
           type: 'image',
           typeName: 'asset',
+          meta: {},
           props: { src: url, w, h, mimeType: mime, isAnimated: false, name: `image-${new Date().toISOString()}` },
         },
       ])
