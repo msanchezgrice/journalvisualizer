@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Journal Visualizer (tldraw + Gemini)
 
-## Getting Started
+An MVP for auto-generating images as you write, using a tldraw canvas as the primary surface and Google Gemini 2.5 Flash Image Preview for image generation.
 
-First, run the development server:
+### Quick Start
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+1) Install dependencies
+
+```
+npm i
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2) Configure environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create `.env.local` with your API key (already created in this repo):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+GEMINI_API_KEY=your_api_key_here
+```
 
-## Learn More
+3) Run the app
 
-To learn more about Next.js, take a look at the following resources:
+```
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open http://localhost:3000
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Usage
 
-## Deploy on Vercel
+- Write in the Journal panel; auto-generates every 30s and skips if unchanged.
+- Paste images (Cmd+V) or add by URL to include as references.
+- Outputs are added as image shapes on the tldraw canvas and also listed in a preview grid.
+- Style defaults to Photorealistic; adjust aspect hint and negative cues as needed.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The API route `/api/generate` calls model `gemini-2.5-flash-image-preview` via `@google/genai`.
+- Production build may fail offline due to Google Fonts; dev mode is fine.
