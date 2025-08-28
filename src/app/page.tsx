@@ -72,6 +72,14 @@ export default function Home() {
     getViewportScreenCenter?: () => { x: number; y: number }
   } | null>(null)
 
+  function handleMount(editor: unknown) {
+    editorRef.current = editor as {
+      createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void
+      createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void
+      getViewportScreenCenter?: () => { x: number; y: number }
+    }
+  }
+
   useEffect(() => {
     if (!running) return
     const id = setInterval(async () => {
@@ -158,7 +166,7 @@ export default function Home() {
   return (
     <div className="flex h-full w-full">
       <div className="flex-1 min-w-0">
-        <Tldraw className="h-full w-full" onMount={(editor) => { editorRef.current = editor as unknown as { createAssets?: (assets: { id: string; type: 'image'; typeName: 'asset'; props: { src: string; w: number; h: number; mimeType: string } }[]) => void; createShapes?: (shapes: { id: string; type: 'image'; x: number; y: number; props: { w: number; h: number; assetId: string } }[]) => void; getViewportScreenCenter?: () => { x: number; y: number } }} />
+        <Tldraw className="h-full w-full" onMount={handleMount} />
       </div>
       <div className="w-[380px] border-l border-black/10 dark:border-white/10 p-3 flex flex-col gap-3 overflow-y-auto">
         <h2 className="text-base font-semibold">Journal</h2>
