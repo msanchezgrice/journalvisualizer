@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, PersonGeneration } from '@google/genai'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         config: {
           numberOfImages: 1,
           outputMimeType: 'image/png',
-          personGeneration: 'ALLOW_ALL',
+          personGeneration: PersonGeneration.ALLOW_ALL,
           imageSize: '1K',
           ...(aspectRatio ? { aspectRatio } : {}),
           ...(negativePrompt ? { negativePrompt } : {}),
